@@ -2,6 +2,7 @@
 
 Proiectul constă într-un sistem de control acces prin RFID, afișarea informațiilor pe un display LCD, generarea unui sunet și controlul unui motor servo. Implementarea include următoarele funcționalități:
 
+[![Smart RFID Lock Project](https://img.youtube.com/vi/1HJOjKcgJtg/0.jpg)](https://www.youtube.com/watch?v=1HJOjKcgJtg)
 ## Funcționalități
 
 ### Detecția și citirea cardurilor RFID
