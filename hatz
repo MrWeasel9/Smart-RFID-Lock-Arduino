@@ -1,0 +1,294 @@
+from flask import Flask, request, jsonify, make_response
+from flask_sqlalchemy import SQLAlchemy
+from os import environ
+from datetime import datetime
+
+app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = environ.get('DB_URL', 'sqlite:///weather.db')
+db = SQLAlchemy(app)
+
+# Define database models
+class Country(db.Model):
+    __tablename__ = 'countries'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), unique=True, nullable=False)
+    latitude = db.Column(db.Float, nullable=False)
+    longitude = db.Column(db.Float, nullable=False)
+
+    def json(self):
+        return {'id': self.id, 'nume': self.name, 'lat': self.latitude, 'lon': self.longitude}
+
+
+class City(db.Model):
+    __tablename__ = 'cities'
+
+    id = db.Column(db.Integer, primary_key=True)
+    country_id = db.Column(db.Integer, db.ForeignKey('countries.id'), nullable=False)
+    name = db.Column(db.String(80), nullable=False)
+    latitude = db.Column(db.Float, nullable=False)
+    longitude = db.Column(db.Float, nullable=False)
+
+    __table_args__ = (db.UniqueConstraint('country_id', 'name', name='unique_city_per_country'),)
+
+    def json(self):
+        return {'id': self.id, 'country_id': self.country_id, 'nume': self.name, 'lat': self.latitude, 'lon': self.longitude}
+
+
+class Temperature(db.Model):
+    __tablename__ = 'temperatures'
+
+    id = db.Column(db.Integer, primary_key=True)
+    value = db.Column(db.Float, nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    city_id = db.Column(db.Integer, db.ForeignKey('cities.id'), nullable=False)
+
+    __table_args__ = (db.UniqueConstraint('city_id', 'timestamp', name='unique_temp_per_city_time'),)
+
+    def json(self):
+        return {'id': self.id, 'value': self.value, 'timestamp': self.timestamp.isoformat(), 'city_id': self.city_id}
+
+# Initialize database
+with app.app_context():
+    db.create_all()
+
+# Routes for Countries
+@app.route('/api/countries', methods=['POST'])
+def create_country():
+    data = request.get_json()
+    try:
+        new_country = Country(name=data['nume'], latitude=data['lat'], longitude=data['lon'])
+        db.session.add(new_country)
+        db.session.commit()
+        return make_response(jsonify({'id': new_country.id}), 201)
+    except Exception as e:
+        return make_response(jsonify({'message': str(e)}), 400)
+
+@app.route('/api/countries', methods=['GET'])
+def get_countries():
+    countries = Country.query.all()
+    return make_response(jsonify([country.json() for country in countries]), 200)
+
+@app.route('/api/countries/<int:id>', methods=['PUT'])
+def update_country(id):
+    data = request.get_json()
+    country = Country.query.get(id)
+    if not country:
+        return make_response(jsonify({'message': 'Country not found'}), 404)
+    try:
+        country.name = data['nume']
+        country.latitude = data['lat']
+        country.longitude = data['lon']
+        db.session.commit()
+        return make_response(jsonify({'message': 'Country updated'}), 200)
+    except Exception as e:
+        return make_response(jsonify({'message': str(e)}), 400)
+
+@app.route('/api/countries/<int:id>', methods=['DELETE'])
+def delete_country(id):
+    country = Country.query.get(id)
+    if not country:
+        return make_response(jsonify({'message': 'Country not found'}), 404)
+    try:
+        db.session.delete(country)
+        db.session.commit()
+        return make_response(jsonify({'message': 'Country deleted'}), 200)
+    except Exception as e:
+        return make_response(jsonify({'message': str(e)}), 400)
+
+# Routes for Cities
+@app.route('/api/cities', methods=['POST'])
+def create_city():
+    data = request.get_json()
+    country = Country.query.get(data['idTara'])
+    if not country:
+        return make_response(jsonify({'message': 'Country not found'}), 404)
+    try:
+        new_city = City(country_id=data['idTara'], name=data['nume'], latitude=data['lat'], longitude=data['lon'])
+        db.session.add(new_city)
+        db.session.commit()
+        return make_response(jsonify({'id': new_city.id}), 201)
+    except Exception as e:
+        return make_response(jsonify({'message': str(e)}), 400)
+
+@app.route('/api/cities', methods=['GET'])
+def get_cities():
+    cities = City.query.all()
+    return make_response(jsonify([city.json() for city in cities]), 200)
+
+@app.route('/api/cities/country/<int:id_Tara>', methods=['GET'])
+def get_cities_by_country(id_Tara):
+    cities = City.query.filter_by(country_id=id_Tara).all()
+    return make_response(jsonify([city.json() for city in cities]), 200)
+
+@app.route('/api/cities/<int:id>', methods=['PUT'])
+def update_city(id):
+    data = request.get_json()
+    city = City.query.get(id)
+    if not city:
+        return make_response(jsonify({'message': 'City not found'}), 404)
+    try:
+        city.country_id = data['idTara']
+        city.name = data['nume']
+        city.latitude = data['lat']
+        city.longitude = data['lon']
+        db.session.commit()
+        return make_response(jsonify({'message': 'City updated'}), 200)
+    except Exception as e:
+        return make_response(jsonify({'message': str(e)}), 400)
+
+@app.route('/api/cities/<int:id>', methods=['DELETE'])
+def delete_city(id):
+    city = City.query.get(id)
+    if not city:
+        return make_response(jsonify({'message': 'City not found'}), 404)
+    try:
+        db.session.delete(city)
+        db.session.commit()
+        return make_response(jsonify({'message': 'City deleted'}), 200)
+    except Exception as e:
+        return make_response(jsonify({'message': str(e)}), 400)
+
+# Routes for Temperatures
+@app.route('/api/temperatures', methods=['POST'])
+def create_temperature():
+    data = request.get_json()
+    city = City.query.get(data['id_oras'])
+    if not city:
+        return make_response(jsonify({'message': 'City not found'}), 404)
+    try:
+        new_temperature = Temperature(city_id=data['id_oras'], value=data['valoare'])
+        db.session.add(new_temperature)
+        db.session.commit()
+        return make_response(jsonify({'id': new_temperature.id}), 201)
+    except Exception as e:
+        return make_response(jsonify({'message': str(e)}), 400)
+
+@app.route('/api/temperatures', methods=['GET'])
+def get_temperatures():
+    lat = request.args.get('lat', type=float)
+    lon = request.args.get('lon', type=float)
+    from_date = request.args.get('from', type=str)
+    until_date = request.args.get('until', type=str)
+
+    query = Temperature.query
+    if lat is not None and lon is not None:
+        query = query.join(City).filter(City.latitude == lat, City.longitude == lon)
+    if from_date:
+        query = query.filter(Temperature.timestamp >= from_date)
+    if until_date:
+        query = query.filter(Temperature.timestamp <= until_date)
+
+    temperatures = query.all()
+    return make_response(jsonify([temp.json() for temp in temperatures]), 200)
+
+@app.route('/api/temperatures/cities/<int:id_oras>', methods=['GET'])
+def get_temperatures_by_city(id_oras):
+    from_date = request.args.get('from', type=str)
+    until_date = request.args.get('until', type=str)
+
+    query = Temperature.query.filter_by(city_id=id_oras)
+    if from_date:
+        query = query.filter(Temperature.timestamp >= from_date)
+    if until_date:
+        query = query.filter(Temperature.timestamp <= until_date)
+
+    temperatures = query.all()
+    return make_response(jsonify([temp.json() for temp in temperatures]), 200)
+
+@app.route('/api/temperatures/countries/<int:id_tara>', methods=['GET'])
+def get_temperatures_by_country(id_tara):
+    from_date = request.args.get('from', type=str)
+    until_date = request.args.get('until', type=str)
+
+    query = Temperature.query.join(City).filter(City.country_id == id_tara)
+    if from_date:
+        query = query.filter(Temperature.timestamp >= from_date)
+    if until_date:
+        query = query.filter(Temperature.timestamp <= until_date)
+
+    temperatures = query.all()
+    return make_response(jsonify([temp.json() for temp in temperatures]), 200)
+
+@app.route('/api/temperatures/<int:id>', methods=['PUT'])
+def update_temperature(id):
+    data = request.get_json()
+    temperature = Temperature.query.get(id)
+    if not temperature:
+        return make_response(jsonify({'message': 'Temperature not found'}), 404)
+    try:
+        temperature.city_id = data['idOras']
+        temperature.value = data['valoare']
+        db.session.commit()
+        return make_response(jsonify({'message': 'Temperature updated'}), 200)
+    except Exception as e:
+        return make_response(jsonify({'message': str(e)}), 400)
+
+@app.route('/api/temperatures/<int:id>', methods=['DELETE'])
+def delete_temperature(id):
+    temperature = Temperature.query.get(id)
+    if not temperature:
+        return make_response(jsonify({'message': 'Temperature not found'}), 404)
+    try:
+        db.session.delete(temperature)
+        db.session.commit()
+        return make_response(jsonify({'message': 'Temperature deleted'}), 200)
+    except Exception as e:
+        return make_response(jsonify({'message': str(e)}), 400)
+
+
+
+if __name__ == '__main__':
+    app.run(debug=True)
+---------------------------------------------------------------------------------------------
+  version: "3.9"
+
+services:
+  flask_app:
+    container_name: flask_app
+    build:
+      context: .
+    ports:
+      - "4000:4000"
+    environment:
+      - DB_URL=postgresql://postgres:postgres@flask_db:5432/weather
+    depends_on:
+      - flask_db
+
+  flask_db:
+    container_name: flask_db
+    image: postgres:15
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=weather
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata: {}
+
+--------------------------------------------------------------------------------------
+FROM python:3.10-slim-buster
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements and install dependencies
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the application code
+COPY . .
+
+# Expose the application port
+EXPOSE 4000
+
+# Run the Flask application
+CMD ["flask", "run", "--host=0.0.0.0", "--port=4000"]
+-------------------------------------------------------------------------------------
+flask
+psycopg2-binary
+Flask-SQLAlchemy
